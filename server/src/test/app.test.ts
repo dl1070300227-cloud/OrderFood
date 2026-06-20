@@ -1,4 +1,7 @@
 import request from "supertest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 
@@ -8,8 +11,44 @@ describe("home ordering api", () => {
     const response = await request(app).get("/api/dishes");
 
     expect(response.status).toBe(200);
-    expect(response.body.length).toBeGreaterThan(0);
+    expect(response.body.length).toBeGreaterThanOrEqual(120);
     expect(response.body[0]).toHaveProperty("recipe");
+  });
+
+  it("backfills common dishes without duplicating or overwriting existing dishes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "order-food-"));
+    const databasePath = join(dir, "test.sqlite");
+
+    try {
+      const app = createApp({ databasePath });
+      const firstList = await request(app).get("/api/dishes");
+      const tomatoEgg = firstList.body.find((dish: { name: string }) => dish.name === "番茄炒蛋");
+
+      await request(app)
+        .put(`/api/dishes/${tomatoEgg.id}`)
+        .send({
+          ...tomatoEgg,
+          price: 99,
+          recipe: {
+            ...tomatoEgg.recipe,
+            steps: "家里自己的做法"
+          }
+        });
+
+      const restartedApp = createApp({ databasePath });
+      const secondList = await request(restartedApp).get("/api/dishes");
+      const updatedTomatoEgg = secondList.body.find((dish: { name: string }) => dish.name === "番茄炒蛋");
+
+      expect(secondList.body).toHaveLength(firstList.body.length);
+      expect(updatedTomatoEgg.price).toBe(99);
+      expect(updatedTomatoEgg.recipe.steps).toBe("家里自己的做法");
+    } finally {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // SQLite can keep a file handle briefly on Windows after the test completes.
+      }
+    }
   });
 
   it("creates a dish with a text recipe", async () => {

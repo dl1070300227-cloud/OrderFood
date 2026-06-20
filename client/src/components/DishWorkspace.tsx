@@ -1,4 +1,4 @@
-import { BookOpen, Minus, Plus, Search, Send } from "lucide-react";
+import { BookOpen, Clock3, Minus, Plus, Search, Send, Utensils } from "lucide-react";
 import { useMemo, useState } from "react";
 import { createOrder } from "../api";
 import type { CartItem, Dish, Order } from "../types";
@@ -95,8 +95,8 @@ export function DishWorkspace({ dishes, onOrderCreated }: DishWorkspaceProps) {
       <div className="panel dish-panel">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">今日菜单</p>
-            <h2>选择这顿饭</h2>
+            <p className="eyebrow">点菜工作台</p>
+            <h2>从菜单里挑几道</h2>
           </div>
           <span className="dish-count">{visibleDishes.length} 道菜</span>
         </div>
@@ -132,8 +132,8 @@ export function DishWorkspace({ dishes, onOrderCreated }: DishWorkspaceProps) {
                     </div>
                     <p>{dish.description || "暂无简介"}</p>
                     <div className="meta-row">
-                      <span>{dish.category || "未分类"}</span>
-                      <span>{dish.estimatedMinutes ?? "-"} 分钟</span>
+                      <span><Utensils size={14} aria-hidden="true" />{dish.category || "未分类"}</span>
+                      <span><Clock3 size={14} aria-hidden="true" />{dish.estimatedMinutes ?? "-"} 分钟</span>
                       <span>{dish.difficulty || "未标注"}</span>
                     </div>
                   </div>
@@ -167,10 +167,15 @@ export function DishWorkspace({ dishes, onOrderCreated }: DishWorkspaceProps) {
       <aside className="panel cart-panel" aria-label="本次餐单">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">本次餐单</p>
-            <h2>准备下单</h2>
+            <p className="eyebrow">家庭餐单</p>
+            <h2>这顿准备做</h2>
           </div>
           <strong>{money(totalPrice)}</strong>
+        </div>
+
+        <div className="meal-ticket">
+          <span>已选 {cart.length} 道</span>
+          <span>{dinersCount} 人用餐</span>
         </div>
 
         <div className="cart-list">

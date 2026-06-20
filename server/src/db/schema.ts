@@ -1,63 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-
-const seedDishes = [
-  {
-    name: "番茄炒蛋",
-    category: "家常菜",
-    price: 18,
-    description: "酸甜下饭，适合快速开饭",
-    estimatedMinutes: 12,
-    difficulty: "简单",
-    isRecommended: true,
-    recipe: {
-      ingredients: "番茄 2 个，鸡蛋 3 个",
-      seasonings: "盐、糖、葱花",
-      steps: "鸡蛋打散炒熟盛出；番茄炒软出汁；倒回鸡蛋合炒并调味。"
-    }
-  },
-  {
-    name: "青椒土豆丝",
-    category: "素菜",
-    price: 12,
-    description: "清爽脆口的家常素菜",
-    estimatedMinutes: 15,
-    difficulty: "简单",
-    isRecommended: false,
-    recipe: {
-      ingredients: "土豆 2 个，青椒 1 个",
-      seasonings: "盐、醋、蒜末",
-      steps: "土豆切丝泡水；青椒切丝；热锅炒香蒜末，加入土豆丝和青椒快炒调味。"
-    }
-  },
-  {
-    name: "可乐鸡翅",
-    category: "荤菜",
-    price: 32,
-    description: "甜咸适中，孩子也爱吃",
-    estimatedMinutes: 30,
-    difficulty: "中等",
-    isRecommended: true,
-    recipe: {
-      ingredients: "鸡翅中 8 个，可乐 1 罐",
-      seasonings: "生抽、老抽、姜片",
-      steps: "鸡翅划口焯水；煎至两面微黄；加入调料和可乐，小火收汁。"
-    }
-  },
-  {
-    name: "紫菜蛋花汤",
-    category: "汤",
-    price: 8,
-    description: "简单快手的餐桌汤品",
-    estimatedMinutes: 8,
-    difficulty: "简单",
-    isRecommended: false,
-    recipe: {
-      ingredients: "紫菜、鸡蛋 1 个",
-      seasonings: "盐、香油、葱花",
-      steps: "水开后加入紫菜；淋入蛋液；加盐调味，出锅前点香油和葱花。"
-    }
-  }
-];
+import { commonDishes } from "./commonDishes";
 
 export function initializeDatabase(db: DatabaseSync): void {
   db.exec(`
@@ -109,12 +51,12 @@ export function initializeDatabase(db: DatabaseSync): void {
     );
   `);
 
-  const existing = db.prepare("SELECT COUNT(*) AS count FROM dishes").get() as { count: number };
-  if (existing.count > 0) {
-    return;
-  }
+  backfillCommonDishes(db);
+}
 
+function backfillCommonDishes(db: DatabaseSync): void {
   const now = new Date().toISOString();
+  const findDish = db.prepare("SELECT id FROM dishes WHERE name = ?");
   const insertDish = db.prepare(`
     INSERT INTO dishes (
       name, category, price, description, estimated_minutes, difficulty,
@@ -127,7 +69,12 @@ export function initializeDatabase(db: DatabaseSync): void {
     VALUES (?, ?, ?, ?, ?, ?)
   `);
 
-  for (const dish of seedDishes) {
+  for (const dish of commonDishes) {
+    const existing = findDish.get(dish.name) as { id: number } | undefined;
+    if (existing) {
+      continue;
+    }
+
     const result = insertDish.run(
       dish.name,
       dish.category,

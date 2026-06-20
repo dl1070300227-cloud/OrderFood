@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -53,6 +53,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -74,5 +75,13 @@ describe("App", () => {
         expect.objectContaining({ method: "POST" })
       )
     );
+  });
+
+  it("shows the redesigned kitchen summary", async () => {
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "今晚吃点什么" })).toBeInTheDocument();
+    expect(screen.getByText("1 道菜可选")).toBeInTheDocument();
+    expect(screen.getByText("1 个分类")).toBeInTheDocument();
   });
 });
