@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { commonDishes } from "./commonDishes";
+import { recipeVideos } from "./recipeVideos";
 
 export function initializeDatabase(db: DatabaseSync): void {
   db.exec(`
@@ -148,7 +149,12 @@ function backfillRecipeSteps(db: DatabaseSync): void {
   const updateVideo = db.prepare(`
     UPDATE recipes
     SET video_url = ?, updated_at = ?
-    WHERE id = ? AND TRIM(video_url) = ''
+    WHERE id = ?
+      AND (
+        TRIM(video_url) = ''
+        OR video_url LIKE 'https://search.bilibili.com/%'
+        OR video_url LIKE 'http://search.bilibili.com/%'
+      )
   `);
 
   for (const dish of commonDishes) {
@@ -198,6 +204,10 @@ function backfillRecipeSteps(db: DatabaseSync): void {
 }
 
 function buildRecipeVideoUrl(dishName: string): string {
+  const video = recipeVideos[dishName];
+  if (video) {
+    return video.url;
+  }
   return `https://search.bilibili.com/all?keyword=${encodeURIComponent(`${dishName} 做法`)}`;
 }
 

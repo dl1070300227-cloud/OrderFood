@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "refresh:videos": "tsx scripts/refreshRecipeVideos.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

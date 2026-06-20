@@ -27,7 +27,10 @@ npm run dev:server
 npm run dev:client
 npm test
 npm run build
+npm run refresh:videos --workspace server
 ```
+
+`refresh:videos` 会从 B 站按播放量抓取菜品做法视频并更新本地映射；如果遇到 B 站风控，已抓到的结果会保留，稍后可再次运行继续补齐。
 
 默认端口：
 

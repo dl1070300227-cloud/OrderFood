@@ -34,6 +34,7 @@ export function createApp(options: CreateAppOptions = {}) {
   initializeDatabase(db);
 
   const app = express();
+  app.locals.db = db;
   app.use(cors());
   app.use(express.json());
   app.use("/uploads", express.static(uploadRoot));
