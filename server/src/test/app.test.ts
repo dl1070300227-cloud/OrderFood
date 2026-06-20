@@ -15,6 +15,17 @@ describe("home ordering api", () => {
     expect(response.body[0]).toHaveProperty("recipe");
   });
 
+  it("backfills seeded dishes with a video tutorial entry and structured steps", async () => {
+    const app = createApp({ databasePath: ":memory:" });
+    const response = await request(app).get("/api/dishes");
+    const kungPaoChicken = response.body.find((dish: { name: string }) => dish.name === "宫保鸡丁");
+
+    expect(kungPaoChicken.recipe.videoUrl).toContain("search.bilibili.com");
+    expect(decodeURIComponent(kungPaoChicken.recipe.videoUrl)).toContain("宫保鸡丁 做法");
+    expect(kungPaoChicken.recipe.stepItems.length).toBeGreaterThanOrEqual(2);
+    expect(kungPaoChicken.recipe.stepItems[0].instruction).toContain("鸡腿肉");
+  });
+
   it("backfills common dishes without duplicating or overwriting existing dishes", async () => {
     const dir = mkdtempSync(join(tmpdir(), "order-food-"));
     const databasePath = join(dir, "test.sqlite");
@@ -42,6 +53,46 @@ describe("home ordering api", () => {
       expect(secondList.body).toHaveLength(firstList.body.length);
       expect(updatedTomatoEgg.price).toBe(99);
       expect(updatedTomatoEgg.recipe.steps).toBe("家里自己的做法");
+    } finally {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // SQLite can keep a file handle briefly on Windows after the test completes.
+      }
+    }
+  });
+
+  it("does not overwrite manually maintained recipe media on restart", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "order-food-"));
+    const databasePath = join(dir, "test.sqlite");
+
+    try {
+      const app = createApp({ databasePath });
+      const firstList = await request(app).get("/api/dishes");
+      const kungPaoChicken = firstList.body.find((dish: { name: string }) => dish.name === "宫保鸡丁");
+
+      await request(app)
+        .put(`/api/dishes/${kungPaoChicken.id}`)
+        .send({
+          ...kungPaoChicken,
+          recipe: {
+            ...kungPaoChicken.recipe,
+            videoUrl: "https://example.com/my-kung-pao-video",
+            stepItems: [
+              { stepOrder: 1, instruction: "自家切丁方式", imagePath: "/uploads/recipes/custom-1.webp" },
+              { stepOrder: 2, instruction: "自家调汁方式", imagePath: "" }
+            ]
+          }
+        });
+
+      const restartedApp = createApp({ databasePath });
+      const secondList = await request(restartedApp).get("/api/dishes");
+      const updatedKungPaoChicken = secondList.body.find((dish: { name: string }) => dish.name === "宫保鸡丁");
+
+      expect(updatedKungPaoChicken.recipe.videoUrl).toBe("https://example.com/my-kung-pao-video");
+      expect(updatedKungPaoChicken.recipe.stepItems).toHaveLength(2);
+      expect(updatedKungPaoChicken.recipe.stepItems[0].instruction).toBe("自家切丁方式");
+      expect(updatedKungPaoChicken.recipe.stepItems[0].imagePath).toBe("/uploads/recipes/custom-1.webp");
     } finally {
       try {
         rmSync(dir, { recursive: true, force: true });

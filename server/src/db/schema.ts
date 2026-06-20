@@ -94,7 +94,7 @@ function backfillCommonDishes(db: DatabaseSync): void {
     INSERT INTO recipes (
       dish_id, ingredients, seasonings, steps, cover_image_path, video_url, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, '', '', ?, ?)
+    VALUES (?, ?, ?, ?, '', ?, ?, ?)
   `);
 
   for (const dish of commonDishes) {
@@ -119,6 +119,7 @@ function backfillCommonDishes(db: DatabaseSync): void {
       dish.recipe.ingredients,
       dish.recipe.seasonings,
       dish.recipe.steps,
+      buildRecipeVideoUrl(dish.name),
       now,
       now
     );
@@ -127,6 +128,55 @@ function backfillCommonDishes(db: DatabaseSync): void {
 
 function backfillRecipeSteps(db: DatabaseSync): void {
   const now = new Date().toISOString();
+  const findRecipe = db.prepare(`
+    SELECT r.id, r.steps
+    FROM recipes r
+    INNER JOIN dishes d ON d.id = r.dish_id
+    WHERE d.name = ?
+  `);
+  const findSteps = db.prepare(`
+    SELECT instruction, image_path
+    FROM recipe_steps
+    WHERE recipe_id = ?
+    ORDER BY step_order ASC, id ASC
+  `);
+  const deleteSteps = db.prepare("DELETE FROM recipe_steps WHERE recipe_id = ?");
+  const insertStep = db.prepare(`
+    INSERT INTO recipe_steps (recipe_id, step_order, instruction, image_path, created_at, updated_at)
+    VALUES (?, ?, ?, '', ?, ?)
+  `);
+  const updateVideo = db.prepare(`
+    UPDATE recipes
+    SET video_url = ?, updated_at = ?
+    WHERE id = ? AND TRIM(video_url) = ''
+  `);
+
+  for (const dish of commonDishes) {
+    const recipe = findRecipe.get(dish.name) as { id: number; steps: string } | undefined;
+    if (!recipe) {
+      continue;
+    }
+
+    updateVideo.run(buildRecipeVideoUrl(dish.name), now, recipe.id);
+
+    const existingSteps = findSteps.all(recipe.id) as Array<{ instruction: string; image_path: string }>;
+    const canReplaceDefaultStep =
+      existingSteps.length === 0 ||
+      (existingSteps.length === 1 &&
+        existingSteps[0].image_path.trim() === "" &&
+        existingSteps[0].instruction.trim() === recipe.steps.trim());
+
+    if (!canReplaceDefaultStep) {
+      continue;
+    }
+
+    const nextSteps = splitRecipeSteps(recipe.steps);
+    deleteSteps.run(recipe.id);
+    nextSteps.forEach((instruction, index) => {
+      insertStep.run(recipe.id, index + 1, instruction, now, now);
+    });
+  }
+
   const recipes = db
     .prepare(
       `
@@ -140,12 +190,27 @@ function backfillRecipeSteps(db: DatabaseSync): void {
     )
     .all() as Array<{ id: number; steps: string }>;
 
-  const insertStep = db.prepare(`
-    INSERT INTO recipe_steps (recipe_id, step_order, instruction, image_path, created_at, updated_at)
-    VALUES (?, 1, ?, '', ?, ?)
-  `);
-
   for (const recipe of recipes) {
-    insertStep.run(recipe.id, recipe.steps, now, now);
+    splitRecipeSteps(recipe.steps).forEach((instruction, index) => {
+      insertStep.run(recipe.id, index + 1, instruction, now, now);
+    });
   }
+}
+
+function buildRecipeVideoUrl(dishName: string): string {
+  return `https://search.bilibili.com/all?keyword=${encodeURIComponent(`${dishName} 做法`)}`;
+}
+
+function splitRecipeSteps(steps: string): string[] {
+  const normalized = steps.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const parts = normalized
+    .split(/[；;。.\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts.length > 0 ? parts : [normalized];
 }
