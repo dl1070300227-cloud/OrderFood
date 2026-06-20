@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Upgrade existing seeded dishes from one long text recipe into structured recipe steps plus a video tutorial search link.
+**Goal:** Upgrade existing seeded dishes from one long text recipe into structured recipe steps plus a direct highest-play Bilibili video link.
 
-**Architecture:** Keep the behavior in the database seed/backfill layer so both fresh databases and already-created local databases are upgraded on startup. Add small pure helpers for video URL creation and step splitting, then use them from `initializeDatabase`.
+**Architecture:** Keep the behavior in the database seed/backfill layer so both fresh databases and already-created local databases are upgraded on startup. Add a generated local video mapping refreshed by script, then use it from `initializeDatabase`; fall back to a search URL only if a dish has no mapped video.
 
 **Tech Stack:** Node.js, Express, `node:sqlite`, Vitest, Supertest.
 
@@ -17,13 +17,13 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Add a test that creates an in-memory app, fetches `/api/dishes`, finds `宫保鸡丁`, and expects `recipe.videoUrl` to contain `search.bilibili.com` plus at least two `recipe.stepItems`.
+Add a test that creates an in-memory app, fetches `/api/dishes`, finds `宫保鸡丁`, and expects `recipe.videoUrl` to contain `bilibili.com/video/` plus at least two `recipe.stepItems`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npm run test --workspace server`
 
-Expected: FAIL because seeded dishes currently return an empty `videoUrl` and only one migrated step.
+Expected: FAIL if seeded dishes return a search page instead of a direct video.
 
 ### Task 2: Implement Seeded Media Helpers
 
@@ -33,11 +33,11 @@ Expected: FAIL because seeded dishes currently return an empty `videoUrl` and on
 
 - [ ] **Step 1: Add helper functions**
 
-Create helpers that build Bilibili search URLs from dish names and split text steps on Chinese or ASCII punctuation.
+Create helpers that read a generated Bilibili top-video mapping and split text steps on Chinese or ASCII punctuation.
 
 - [ ] **Step 2: Use helpers during insert and backfill**
 
-New common dishes should insert `video_url`. Existing recipes with empty `video_url` should be updated. Old one-step recipe rows should be replaced by split steps only when they still match the original `recipes.steps`.
+New common dishes should insert direct mapped `video_url`. Existing recipes with empty `video_url` or a system-generated search URL should be updated. Old one-step recipe rows should be replaced by split steps only when they still match the original `recipes.steps`.
 
 - [ ] **Step 3: Run tests**
 
