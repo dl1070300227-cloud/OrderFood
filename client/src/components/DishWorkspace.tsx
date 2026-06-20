@@ -1,6 +1,6 @@
-import { BookOpen, Clock3, Minus, Plus, Search, Send, Utensils } from "lucide-react";
+import { BookOpen, Clock3, ExternalLink, Minus, Plus, Search, Send, Utensils } from "lucide-react";
 import { useMemo, useState } from "react";
-import { createOrder } from "../api";
+import { createOrder, getAssetUrl } from "../api";
 import type { CartItem, Dish, Order } from "../types";
 
 type DishWorkspaceProps = {
@@ -122,6 +122,12 @@ export function DishWorkspace({ dishes, onOrderCreated }: DishWorkspaceProps) {
         <div className="dish-list">
           {visibleDishes.map((dish) => {
             const isExpanded = expandedDishId === dish.id;
+            const recipeSteps =
+              dish.recipe.stepItems.length > 0
+                ? dish.recipe.stepItems
+                : dish.recipe.steps.trim()
+                  ? [{ stepOrder: 1, instruction: dish.recipe.steps, imagePath: "" }]
+                  : [];
             return (
               <article className="dish-item" key={dish.id}>
                 <div className="dish-main">
@@ -153,9 +159,49 @@ export function DishWorkspace({ dishes, onOrderCreated }: DishWorkspaceProps) {
 
                 {isExpanded ? (
                   <div className="recipe-box">
-                    <p><strong>食材：</strong>{dish.recipe.ingredients || "暂无"}</p>
-                    <p><strong>调料：</strong>{dish.recipe.seasonings || "暂无"}</p>
-                    <p><strong>步骤：</strong>{dish.recipe.steps || "暂无教程"}</p>
+                    {dish.recipe.coverImagePath ? (
+                      <img
+                        alt={`${dish.name} 封面`}
+                        className="recipe-cover"
+                        src={getAssetUrl(dish.recipe.coverImagePath)}
+                      />
+                    ) : null}
+                    <div className="recipe-meta-grid">
+                      <p><strong>食材：</strong>{dish.recipe.ingredients || "暂无"}</p>
+                      <p><strong>调料：</strong>{dish.recipe.seasonings || "暂无"}</p>
+                    </div>
+                    {dish.recipe.videoUrl ? (
+                      <a
+                        className="video-link"
+                        href={dish.recipe.videoUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <ExternalLink size={16} aria-hidden="true" />
+                        打开视频教程
+                      </a>
+                    ) : null}
+                    <div className="recipe-steps">
+                      {recipeSteps.length > 0 ? (
+                        recipeSteps.map((step, index) => (
+                          <div className="recipe-step" key={`${step.stepOrder}-${index}`}>
+                            {step.imagePath ? (
+                              <img
+                                alt={`步骤 ${index + 1}`}
+                                className="recipe-step-image"
+                                src={getAssetUrl(step.imagePath)}
+                              />
+                            ) : null}
+                            <div>
+                              <span>步骤 {index + 1}</span>
+                              <p>{step.instruction || "暂无步骤说明"}</p>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="empty-text">暂无教程</p>
+                      )}
+                    </div>
                   </div>
                 ) : null}
               </article>

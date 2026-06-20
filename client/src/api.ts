@@ -2,6 +2,16 @@ import type { CreateOrderInput, Dish, DishInput, Order } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3001";
 
+export function getAssetUrl(path: string): string {
+  if (!path) {
+    return "";
+  }
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -45,6 +55,24 @@ export function deleteDish(id: number): Promise<void> {
   return request<void>(`/api/dishes/${id}`, {
     method: "DELETE"
   });
+}
+
+export async function uploadRecipeImage(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const response = await fetch(`${API_BASE}/api/uploads/recipe-image`, {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ message: "图片上传失败" }));
+    throw new Error(body.message ?? "图片上传失败");
+  }
+
+  const body = (await response.json()) as { path: string };
+  return body.path;
 }
 
 export function fetchOrders(): Promise<Order[]> {

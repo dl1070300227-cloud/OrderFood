@@ -2,6 +2,16 @@ export type Recipe = {
   ingredients: string;
   seasonings: string;
   steps: string;
+  coverImagePath: string;
+  videoUrl: string;
+  stepItems: RecipeStep[];
+};
+
+export type RecipeStep = {
+  id?: number;
+  stepOrder: number;
+  instruction: string;
+  imagePath: string;
 };
 
 export type Dish = {

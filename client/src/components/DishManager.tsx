@@ -1,6 +1,6 @@
-import { Pencil, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ImageUp, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useState } from "react";
-import { createDish, deleteDish, updateDish } from "../api";
+import { createDish, deleteDish, getAssetUrl, updateDish, uploadRecipeImage } from "../api";
 import type { Dish, DishInput } from "../types";
 
 type DishManagerProps = {
@@ -8,24 +8,37 @@ type DishManagerProps = {
   onChanged: () => void;
 };
 
-const emptyForm: DishInput = {
-  name: "",
-  category: "",
-  price: 0,
-  description: "",
-  estimatedMinutes: null,
-  difficulty: "",
-  isRecommended: false,
-  recipe: {
-    ingredients: "",
-    seasonings: "",
-    steps: ""
-  }
-};
+function createEmptyStep(stepOrder = 1): DishInput["recipe"]["stepItems"][number] {
+  return {
+    stepOrder,
+    instruction: "",
+    imagePath: ""
+  };
+}
+
+function createEmptyForm(): DishInput {
+  return {
+    name: "",
+    category: "",
+    price: 0,
+    description: "",
+    estimatedMinutes: null,
+    difficulty: "",
+    isRecommended: false,
+    recipe: {
+      ingredients: "",
+      seasonings: "",
+      steps: "",
+      coverImagePath: "",
+      videoUrl: "",
+      stepItems: [createEmptyStep()]
+    }
+  };
+}
 
 export function DishManager({ dishes, onChanged }: DishManagerProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<DishInput>(emptyForm);
+  const [form, setForm] = useState<DishInput>(() => createEmptyForm());
   const [message, setMessage] = useState("");
 
   function editDish(dish: Dish) {
@@ -38,7 +51,10 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
       estimatedMinutes: dish.estimatedMinutes,
       difficulty: dish.difficulty,
       isRecommended: dish.isRecommended,
-      recipe: dish.recipe
+      recipe: {
+        ...dish.recipe,
+        stepItems: dish.recipe.stepItems.length > 0 ? dish.recipe.stepItems : [createEmptyStep()]
+      }
     });
     setMessage("");
   }
@@ -52,6 +68,73 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
       ...current,
       recipe: { ...current.recipe, [key]: value }
     }));
+  }
+
+  function updateRecipeStep(index: number, value: Partial<DishInput["recipe"]["stepItems"][number]>) {
+    setForm((current) => ({
+      ...current,
+      recipe: {
+        ...current.recipe,
+        stepItems: current.recipe.stepItems.map((step, stepIndex) =>
+          stepIndex === index ? { ...step, ...value } : step
+        )
+      }
+    }));
+  }
+
+  function addRecipeStep() {
+    setForm((current) => ({
+      ...current,
+      recipe: {
+        ...current.recipe,
+        stepItems: [...current.recipe.stepItems, createEmptyStep(current.recipe.stepItems.length + 1)]
+      }
+    }));
+  }
+
+  function removeRecipeStep(index: number) {
+    setForm((current) => {
+      const nextSteps = current.recipe.stepItems.filter((_step, stepIndex) => stepIndex !== index);
+      return {
+        ...current,
+        recipe: {
+          ...current.recipe,
+          stepItems: (nextSteps.length > 0 ? nextSteps : [createEmptyStep()]).map((step, stepIndex) => ({
+            ...step,
+            stepOrder: stepIndex + 1
+          }))
+        }
+      };
+    });
+  }
+
+  function moveRecipeStep(index: number, direction: -1 | 1) {
+    setForm((current) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= current.recipe.stepItems.length) {
+        return current;
+      }
+      const nextSteps = [...current.recipe.stepItems];
+      [nextSteps[index], nextSteps[targetIndex]] = [nextSteps[targetIndex], nextSteps[index]];
+      return {
+        ...current,
+        recipe: {
+          ...current.recipe,
+          stepItems: nextSteps.map((step, stepIndex) => ({ ...step, stepOrder: stepIndex + 1 }))
+        }
+      };
+    });
+  }
+
+  async function uploadImage(file: File, onUploaded: (path: string) => void) {
+    setMessage("图片上传中...");
+    try {
+      const path = await uploadRecipeImage(file);
+      onUploaded(path);
+      setMessage("图片已上传");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "图片上传失败");
+    }
   }
 
   async function saveDish() {
@@ -69,7 +152,7 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
         setMessage("菜品已新增");
       }
       setEditingId(null);
-      setForm(emptyForm);
+      setForm(createEmptyForm());
       onChanged();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "保存失败");
@@ -86,7 +169,7 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
       setMessage("菜品已删除");
       if (editingId === dish.id) {
         setEditingId(null);
-        setForm(emptyForm);
+        setForm(createEmptyForm());
       }
       onChanged();
     } catch (error) {
@@ -161,9 +244,122 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
           <textarea value={form.recipe.seasonings} onChange={(event) => updateRecipe("seasonings", event.target.value)} />
         </label>
         <label className="field">
-          <span>步骤</span>
+          <span>文字步骤</span>
           <textarea value={form.recipe.steps} onChange={(event) => updateRecipe("steps", event.target.value)} />
         </label>
+
+        <div className="recipe-editor">
+          <div className="recipe-editor-heading">
+            <div>
+              <p className="eyebrow">图文和视频</p>
+              <h3>制作教程</h3>
+            </div>
+            <button className="ghost-button" type="button" onClick={addRecipeStep}>
+              <Plus size={16} aria-hidden="true" />
+              添加步骤
+            </button>
+          </div>
+
+          <div className="form-grid">
+            <label className="field">
+              <span>视频链接</span>
+              <input
+                placeholder="https://..."
+                value={form.recipe.videoUrl}
+                onChange={(event) => updateRecipe("videoUrl", event.target.value)}
+              />
+            </label>
+            <label className="field upload-field">
+              <span>菜品封面</span>
+              <input
+                accept="image/jpeg,image/png,image/webp"
+                type="file"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void uploadImage(file, (path) => updateRecipe("coverImagePath", path));
+                  }
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+
+          {form.recipe.coverImagePath ? (
+            <div className="upload-preview">
+              <img alt="菜品封面预览" src={getAssetUrl(form.recipe.coverImagePath)} />
+              <button className="icon-text-button" type="button" onClick={() => updateRecipe("coverImagePath", "")}>
+                <X size={15} aria-hidden="true" />
+                移除封面
+              </button>
+            </div>
+          ) : null}
+
+          <div className="step-editor-list">
+            {form.recipe.stepItems.map((step, index) => (
+              <div className="step-editor-row" key={`${step.stepOrder}-${index}`}>
+                <div className="step-editor-topline">
+                  <strong>步骤 {index + 1}</strong>
+                  <div className="icon-actions">
+                    <button
+                      type="button"
+                      title="上移"
+                      disabled={index === 0}
+                      onClick={() => moveRecipeStep(index, -1)}
+                    >
+                      <ArrowUp size={15} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      title="下移"
+                      disabled={index === form.recipe.stepItems.length - 1}
+                      onClick={() => moveRecipeStep(index, 1)}
+                    >
+                      <ArrowDown size={15} aria-hidden="true" />
+                    </button>
+                    <button type="button" title="删除步骤" onClick={() => removeRecipeStep(index)}>
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+                <label className="field">
+                  <span>步骤 {index + 1} 说明</span>
+                  <textarea
+                    value={step.instruction}
+                    onChange={(event) => updateRecipeStep(index, { instruction: event.target.value })}
+                  />
+                </label>
+                <label className="field upload-field">
+                  <span>步骤 {index + 1} 图片</span>
+                  <input
+                    accept="image/jpeg,image/png,image/webp"
+                    type="file"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        void uploadImage(file, (path) => updateRecipeStep(index, { imagePath: path }));
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+                {step.imagePath ? (
+                  <div className="upload-preview">
+                    <img alt={`步骤 ${index + 1} 图片预览`} src={getAssetUrl(step.imagePath)} />
+                    <button
+                      className="icon-text-button"
+                      type="button"
+                      onClick={() => updateRecipeStep(index, { imagePath: "" })}
+                    >
+                      <ImageUp size={15} aria-hidden="true" />
+                      更换图片
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
 
         {message ? <p className="form-message">{message}</p> : null}
 
@@ -177,7 +373,7 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
             type="button"
             onClick={() => {
               setEditingId(null);
-              setForm(emptyForm);
+              setForm(createEmptyForm());
             }}
           >
             清空

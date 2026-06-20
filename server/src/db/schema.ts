@@ -22,9 +22,22 @@ export function initializeDatabase(db: DatabaseSync): void {
       ingredients TEXT NOT NULL DEFAULT '',
       seasonings TEXT NOT NULL DEFAULT '',
       steps TEXT NOT NULL DEFAULT '',
+      cover_image_path TEXT NOT NULL DEFAULT '',
+      video_url TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (dish_id) REFERENCES dishes(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS recipe_steps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipe_id INTEGER NOT NULL,
+      step_order INTEGER NOT NULL CHECK (step_order >= 1),
+      instruction TEXT NOT NULL DEFAULT '',
+      image_path TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS orders (
@@ -51,7 +64,20 @@ export function initializeDatabase(db: DatabaseSync): void {
     );
   `);
 
+  ensureRecipeMediaColumns(db);
   backfillCommonDishes(db);
+  backfillRecipeSteps(db);
+}
+
+function ensureRecipeMediaColumns(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(recipes)").all() as Array<{ name: string }>;
+  const names = new Set(columns.map((column) => column.name));
+  if (!names.has("cover_image_path")) {
+    db.exec("ALTER TABLE recipes ADD COLUMN cover_image_path TEXT NOT NULL DEFAULT ''");
+  }
+  if (!names.has("video_url")) {
+    db.exec("ALTER TABLE recipes ADD COLUMN video_url TEXT NOT NULL DEFAULT ''");
+  }
 }
 
 function backfillCommonDishes(db: DatabaseSync): void {
@@ -65,8 +91,10 @@ function backfillCommonDishes(db: DatabaseSync): void {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertRecipe = db.prepare(`
-    INSERT INTO recipes (dish_id, ingredients, seasonings, steps, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO recipes (
+      dish_id, ingredients, seasonings, steps, cover_image_path, video_url, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, '', '', ?, ?)
   `);
 
   for (const dish of commonDishes) {
@@ -94,5 +122,30 @@ function backfillCommonDishes(db: DatabaseSync): void {
       now,
       now
     );
+  }
+}
+
+function backfillRecipeSteps(db: DatabaseSync): void {
+  const now = new Date().toISOString();
+  const recipes = db
+    .prepare(
+      `
+      SELECT r.id, r.steps
+      FROM recipes r
+      WHERE TRIM(r.steps) != ''
+        AND NOT EXISTS (
+          SELECT 1 FROM recipe_steps rs WHERE rs.recipe_id = r.id
+        )
+    `
+    )
+    .all() as Array<{ id: number; steps: string }>;
+
+  const insertStep = db.prepare(`
+    INSERT INTO recipe_steps (recipe_id, step_order, instruction, image_path, created_at, updated_at)
+    VALUES (?, 1, ?, '', ?, ?)
+  `);
+
+  for (const recipe of recipes) {
+    insertStep.run(recipe.id, recipe.steps, now, now);
   }
 }

@@ -73,6 +73,75 @@ describe("home ordering api", () => {
     expect(response.body.recipe.steps).toContain("合炒");
   });
 
+  it("creates and updates a dish with cover image, video link, and recipe step items", async () => {
+    const app = createApp({ databasePath: ":memory:" });
+    const created = await request(app).post("/api/dishes").send({
+      name: "图文教程测试菜",
+      category: "家常菜",
+      price: 20,
+      description: "用于测试图文教程",
+      estimatedMinutes: 15,
+      difficulty: "简单",
+      isRecommended: false,
+      recipe: {
+        ingredients: "鸡蛋，番茄",
+        seasonings: "盐",
+        steps: "旧文本步骤",
+        coverImagePath: "/uploads/recipes/cover.webp",
+        videoUrl: "https://example.com/video",
+        stepItems: [
+          { stepOrder: 1, instruction: "切番茄", imagePath: "/uploads/recipes/step-1.webp" },
+          { stepOrder: 2, instruction: "炒鸡蛋", imagePath: "" }
+        ]
+      }
+    });
+
+    expect(created.status).toBe(201);
+    expect(created.body.recipe.coverImagePath).toBe("/uploads/recipes/cover.webp");
+    expect(created.body.recipe.videoUrl).toBe("https://example.com/video");
+    expect(created.body.recipe.stepItems).toHaveLength(2);
+    expect(created.body.recipe.stepItems[0].instruction).toBe("切番茄");
+
+    const updated = await request(app)
+      .put(`/api/dishes/${created.body.id}`)
+      .send({
+        ...created.body,
+        recipe: {
+          ...created.body.recipe,
+          videoUrl: "https://example.com/updated",
+          stepItems: [{ stepOrder: 1, instruction: "更新后的步骤", imagePath: "" }]
+        }
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.recipe.videoUrl).toBe("https://example.com/updated");
+    expect(updated.body.recipe.stepItems).toHaveLength(1);
+    expect(updated.body.recipe.stepItems[0].instruction).toBe("更新后的步骤");
+  });
+
+  it("rejects invalid recipe video urls", async () => {
+    const app = createApp({ databasePath: ":memory:" });
+    const response = await request(app).post("/api/dishes").send({
+      name: "非法视频链接",
+      category: "家常菜",
+      price: 12,
+      description: "",
+      estimatedMinutes: 10,
+      difficulty: "简单",
+      isRecommended: false,
+      recipe: {
+        ingredients: "豆腐",
+        seasonings: "盐",
+        steps: "煎一下",
+        coverImagePath: "",
+        videoUrl: "javascript:alert(1)",
+        stepItems: [{ stepOrder: 1, instruction: "煎豆腐", imagePath: "" }]
+      }
+    });
+
+    expect(response.status).toBe(400);
+  });
+
   it("creates an order with price snapshots", async () => {
     const app = createApp({ databasePath: ":memory:" });
     const dishes = await request(app).get("/api/dishes");
