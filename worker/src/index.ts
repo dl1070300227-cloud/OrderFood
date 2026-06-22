@@ -2,8 +2,8 @@ import { commonDishes } from "../../server/src/db/commonDishes";
 import { recipeVideos } from "../../server/src/db/recipeVideos";
 
 export type ApiEnv = {
-  DB: D1Database;
-  UPLOADS: R2Bucket;
+  DB?: D1Database;
+  UPLOADS?: R2Bucket;
 };
 
 type Env = ApiEnv & {
@@ -138,6 +138,18 @@ function notFound(message = "资源不存在"): Response {
 
 function badRequest(message: string): Response {
   return json({ message }, { status: 400 });
+}
+
+function serverError(message: string, detail?: string): Response {
+  return json({ message, detail: detail ?? "" }, { status: 500 });
+}
+
+function getDatabase(env: ApiEnv): D1Database | Response {
+  return env.DB ?? serverError("Cloudflare D1 未绑定", "请在 Pages 项目 Settings -> Functions 中添加 D1 binding: DB");
+}
+
+function getUploadsBucket(env: ApiEnv): R2Bucket | Response {
+  return env.UPLOADS ?? serverError("Cloudflare R2 未绑定", "请在 Pages 项目 Settings -> Functions 中添加 R2 binding: UPLOADS");
 }
 
 function roundMoney(value: number): number {
@@ -643,6 +655,10 @@ async function getOrderStats(db: D1Database, url: URL): Promise<Response> {
 }
 
 async function uploadRecipeImage(env: ApiEnv, request: Request): Promise<Response> {
+  const bucket = getUploadsBucket(env);
+  if (bucket instanceof Response) {
+    return bucket;
+  }
   const form = await request.formData();
   const file = form.get("image");
   if (!(file instanceof File)) {
@@ -656,15 +672,19 @@ async function uploadRecipeImage(env: ApiEnv, request: Request): Promise<Respons
     return badRequest("图片不能超过 5MB");
   }
   const key = `recipes/${Date.now()}-${crypto.randomUUID()}${extension}`;
-  await env.UPLOADS.put(key, file.stream(), {
+  await bucket.put(key, file.stream(), {
     httpMetadata: { contentType: file.type }
   });
   return json({ path: `/uploads/${key}` }, { status: 201 });
 }
 
 export async function serveUpload(env: ApiEnv, pathname: string): Promise<Response> {
+  const bucket = getUploadsBucket(env);
+  if (bucket instanceof Response) {
+    return bucket;
+  }
   const key = pathname.replace(/^\/uploads\//, "");
-  const object = await env.UPLOADS.get(key);
+  const object = await bucket.get(key);
   if (!object) {
     return notFound("图片不存在");
   }
@@ -676,7 +696,6 @@ export async function serveUpload(env: ApiEnv, pathname: string): Promise<Respon
 }
 
 export async function handleApi(env: ApiEnv, request: Request): Promise<Response> {
-  await ensureDatabase(env.DB);
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
@@ -685,44 +704,57 @@ export async function handleApi(env: ApiEnv, request: Request): Promise<Response
     return empty(204);
   }
   if (path === "/api/health" && method === "GET") {
-    return json({ ok: true });
+    return json({
+      ok: Boolean(env.DB && env.UPLOADS),
+      bindings: {
+        DB: Boolean(env.DB),
+        UPLOADS: Boolean(env.UPLOADS)
+      }
+    });
   }
+
+  const db = getDatabase(env);
+  if (db instanceof Response) {
+    return db;
+  }
+  await ensureDatabase(db);
+
   if (path === "/api/uploads/recipe-image" && method === "POST") {
     return uploadRecipeImage(env, request);
   }
   if (path === "/api/dishes" && method === "GET") {
-    return listDishes(env.DB);
+    return listDishes(db);
   }
   if (path === "/api/dishes" && method === "POST") {
-    return createDish(env.DB, request);
+    return createDish(db, request);
   }
   const favoriteMatch = /^\/api\/dishes\/(\d+)\/favorite$/.exec(path);
   if (favoriteMatch && method === "PATCH") {
-    return updateDishFavorite(env.DB, request, Number(favoriteMatch[1]));
+    return updateDishFavorite(db, request, Number(favoriteMatch[1]));
   }
   const dishMatch = /^\/api\/dishes\/(\d+)$/.exec(path);
   if (dishMatch && method === "PUT") {
-    return updateDish(env.DB, request, Number(dishMatch[1]));
+    return updateDish(db, request, Number(dishMatch[1]));
   }
   if (dishMatch && method === "DELETE") {
-    return deleteDish(env.DB, Number(dishMatch[1]));
+    return deleteDish(db, Number(dishMatch[1]));
   }
   if (path === "/api/orders" && method === "GET") {
-    return listOrders(env.DB);
+    return listOrders(db);
   }
   if (path === "/api/orders/stats" && method === "GET") {
-    return getOrderStats(env.DB, url);
+    return getOrderStats(db, url);
   }
   if (path === "/api/orders" && method === "POST") {
-    return createOrder(env.DB, request);
+    return createOrder(db, request);
   }
   const orderStatusMatch = /^\/api\/orders\/(\d+)\/status$/.exec(path);
   if (orderStatusMatch && method === "PATCH") {
-    return updateOrderStatus(env.DB, request, Number(orderStatusMatch[1]));
+    return updateOrderStatus(db, request, Number(orderStatusMatch[1]));
   }
   const orderMatch = /^\/api\/orders\/(\d+)$/.exec(path);
   if (orderMatch && method === "DELETE") {
-    return deleteOrder(env.DB, Number(orderMatch[1]));
+    return deleteOrder(db, Number(orderMatch[1]));
   }
   return notFound("接口不存在");
 }
