@@ -13,4 +13,8 @@ describe("buildApiBase", () => {
   it("keeps localhost for local desktop access", () => {
     expect(buildApiBase(undefined, "localhost")).toBe("http://localhost:3001");
   });
+
+  it("uses same-origin API calls for deployed hosts", () => {
+    expect(buildApiBase(undefined, "order-food.example.workers.dev")).toBe("");
+  });
 });

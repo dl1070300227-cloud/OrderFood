@@ -1,11 +1,23 @@
 import type { CreateOrderInput, Dish, DishInput, Order, OrderStats, OrderStatsRange } from "./types";
 
+function isLocalHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function isLanHost(hostname: string): boolean {
+  return /^(10|127|172\.(1[6-9]|2\d|3[01])|192\.168)\./.test(hostname);
+}
+
 export function buildApiBase(configuredBase?: string, pageHostname = window.location.hostname): string {
   if (configuredBase) {
     return configuredBase.replace(/\/$/, "");
   }
 
-  return `http://${pageHostname || "localhost"}:3001`;
+  if (isLocalHost(pageHostname) || isLanHost(pageHostname)) {
+    return `http://${pageHostname || "localhost"}:3001`;
+  }
+
+  return "";
 }
 
 const API_BASE = buildApiBase(import.meta.env.VITE_API_BASE);

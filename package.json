@@ -9,6 +9,12 @@
     "dev:server": "npm run dev --workspace server",
     "dev:client": "npm run dev --workspace client",
     "test": "npm run test --workspace server && npm run test --workspace client",
-    "build": "npm run build --workspace client"
+    "build": "npm run build --workspace client",
+    "worker:typecheck": "tsc -p worker/tsconfig.json",
+    "cf:deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250620.0",
+    "wrangler": "^4.103.0"
   }
 }
