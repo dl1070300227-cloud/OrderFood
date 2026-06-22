@@ -1,24 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "order-food",
-  "main": "worker/src/index.ts",
   "compatibility_date": "2026-06-22",
-  "assets": {
-    "directory": "client/dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "order-food-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "UPLOADS",
-      "bucket_name": "order-food-uploads"
-    }
-  ]
+  "pages_build_output_dir": "client/dist"
 }

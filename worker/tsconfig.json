@@ -10,5 +10,10 @@
     "types": ["@cloudflare/workers-types"],
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "../server/src/db/commonDishes.ts", "../server/src/db/recipeVideos.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../functions/**/*.ts",
+    "../server/src/db/commonDishes.ts",
+    "../server/src/db/recipeVideos.ts"
+  ]
 }

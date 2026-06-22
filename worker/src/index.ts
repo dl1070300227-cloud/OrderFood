@@ -1,10 +1,13 @@
 import { commonDishes } from "../../server/src/db/commonDishes";
 import { recipeVideos } from "../../server/src/db/recipeVideos";
 
-type Env = {
-  ASSETS: Fetcher;
+export type ApiEnv = {
   DB: D1Database;
   UPLOADS: R2Bucket;
+};
+
+type Env = ApiEnv & {
+  ASSETS: Fetcher;
 };
 
 type JsonValue = Record<string, unknown> | Array<unknown> | string | number | boolean | null;
@@ -639,7 +642,7 @@ async function getOrderStats(db: D1Database, url: URL): Promise<Response> {
   });
 }
 
-async function uploadRecipeImage(env: Env, request: Request): Promise<Response> {
+async function uploadRecipeImage(env: ApiEnv, request: Request): Promise<Response> {
   const form = await request.formData();
   const file = form.get("image");
   if (!(file instanceof File)) {
@@ -659,7 +662,7 @@ async function uploadRecipeImage(env: Env, request: Request): Promise<Response> 
   return json({ path: `/uploads/${key}` }, { status: 201 });
 }
 
-async function serveUpload(env: Env, pathname: string): Promise<Response> {
+export async function serveUpload(env: ApiEnv, pathname: string): Promise<Response> {
   const key = pathname.replace(/^\/uploads\//, "");
   const object = await env.UPLOADS.get(key);
   if (!object) {
@@ -672,7 +675,7 @@ async function serveUpload(env: Env, pathname: string): Promise<Response> {
   return new Response(object.body, { headers });
 }
 
-async function handleApi(env: Env, request: Request): Promise<Response> {
+export async function handleApi(env: ApiEnv, request: Request): Promise<Response> {
   await ensureDatabase(env.DB);
   const url = new URL(request.url);
   const path = url.pathname;

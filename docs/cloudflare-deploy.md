@@ -1,55 +1,85 @@
-# Cloudflare 部署说明
+# Cloudflare Pages 部署说明
 
-本项目已增加 Cloudflare Workers 部署入口。线上版本使用：
+本项目的线上部署方式是 Cloudflare Pages：
 
-- Workers Static Assets 托管 `client/dist` 前端资源。
-- Worker 处理 `/api/*` 接口。
-- D1 保存菜品、订单、教程等结构化数据。
-- R2 保存菜品封面和教程步骤图片。
+- `client/dist` 托管前端静态资源。
+- `functions/api/*` 提供接口。
+- D1 保存菜品、订单和教程数据。
+- R2 保存上传的菜品图片。
 
-## 1. 登录 Cloudflare
+## Cloudflare Pages 构建设置
+
+在 Cloudflare Pages 连接 GitHub 仓库后，使用以下设置：
+
+```text
+Framework preset: None
+Build command: npm run build
+Build output directory: client/dist
+Root directory: /
+```
+
+仓库里的 [wrangler.jsonc](../wrangler.jsonc) 已配置：
+
+```jsonc
+"pages_build_output_dir": "client/dist"
+```
+
+这会修复 Pages 日志中的 `未找到输出目录“dist”` 问题。
+
+## 绑定 D1 和 R2
+
+先在本地或 Cloudflare 控制台创建资源：
 
 ```bash
 npx wrangler login
-```
-
-## 2. 创建 Cloudflare 资源
-
-```bash
 npx wrangler d1 create order-food-db
 npx wrangler r2 bucket create order-food-uploads
 ```
 
-把 `d1 create` 返回的 `database_id` 填到 [wrangler.jsonc](../wrangler.jsonc)：
+然后在 Cloudflare Pages 项目中进入：
 
-```jsonc
-"database_id": "REPLACE_WITH_D1_DATABASE_ID"
+```text
+Settings -> Functions -> D1 database bindings
 ```
 
-## 3. 构建和部署
+添加：
+
+```text
+Variable name: DB
+D1 database: order-food-db
+```
+
+再进入：
+
+```text
+Settings -> Functions -> R2 bucket bindings
+```
+
+添加：
+
+```text
+Variable name: UPLOADS
+R2 bucket: order-food-uploads
+```
+
+保存后重新部署。第一次访问线上应用时，Functions 会自动创建 D1 表并导入常见菜数据。
+
+## 本地验证 Pages Functions
 
 ```bash
 npm install
 npm run build
 npm run worker:typecheck
-npx wrangler deploy
+npx wrangler pages dev client/dist --compatibility-date=2026-06-22
 ```
 
-部署成功后，Cloudflare 会返回 `*.workers.dev` 地址。打开该地址即可访问完整应用，前端和接口都走同一个 Worker 域名。
+看到 `Compiled Worker successfully` 即表示 Pages Functions 能被识别。
 
-## 4. 本地开发
+## 备用 Workers 部署
 
-原来的本地开发方式仍可使用：
+[wrangler.worker.jsonc](../wrangler.worker.jsonc) 保留了 Workers Static Assets 的部署配置。如果以后不使用 Pages Git 部署，可以填入 D1 `database_id` 后执行：
 
 ```bash
-npm run dev:server
-npm run dev:client
+npm run build
+npx wrangler deploy --config wrangler.worker.jsonc
 ```
-
-本地和局域网访问时，前端仍会请求 `http://当前主机:3001`。部署到 Cloudflare 后，前端会自动请求同域名 `/api`。
-
-## 5. 当前限制
-
-- Cloudflare Worker 版本和本地 Express 版本是两套运行入口，但 API 路径保持一致。
-- 上传图片在线上会进入 R2，本地仍保存到 `server/data/uploads`。
-- 第一次访问线上应用时，Worker 会自动初始化 D1 表结构并导入常见菜数据。

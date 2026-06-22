@@ -11,7 +11,7 @@
     "test": "npm run test --workspace server && npm run test --workspace client",
     "build": "npm run build --workspace client",
     "worker:typecheck": "tsc -p worker/tsconfig.json",
-    "cf:deploy": "npm run build && wrangler deploy"
+    "cf:deploy": "npm run build && wrangler pages deploy client/dist --project-name order-food --commit-dirty=true"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250620.0",
