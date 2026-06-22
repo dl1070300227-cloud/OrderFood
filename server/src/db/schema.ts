@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { commonDishes } from "./commonDishes";
+import { commonDishes, defaultCoverImagesByCategory } from "./commonDishes";
 import { recipeVideos } from "./recipeVideos";
 
 export function initializeDatabase(db: DatabaseSync): void {
@@ -13,6 +13,7 @@ export function initializeDatabase(db: DatabaseSync): void {
       estimated_minutes INTEGER,
       difficulty TEXT NOT NULL DEFAULT '',
       is_recommended INTEGER NOT NULL DEFAULT 0,
+      is_favorite INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -65,9 +66,19 @@ export function initializeDatabase(db: DatabaseSync): void {
     );
   `);
 
+  ensureDishPreferenceColumns(db);
   ensureRecipeMediaColumns(db);
   backfillCommonDishes(db);
   backfillRecipeSteps(db);
+  backfillDefaultCoverImages(db);
+}
+
+function ensureDishPreferenceColumns(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(dishes)").all() as Array<{ name: string }>;
+  const names = new Set(columns.map((column) => column.name));
+  if (!names.has("is_favorite")) {
+    db.exec("ALTER TABLE dishes ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 function ensureRecipeMediaColumns(db: DatabaseSync): void {
@@ -87,15 +98,15 @@ function backfillCommonDishes(db: DatabaseSync): void {
   const insertDish = db.prepare(`
     INSERT INTO dishes (
       name, category, price, description, estimated_minutes, difficulty,
-      is_recommended, created_at, updated_at
+      is_recommended, is_favorite, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
   `);
   const insertRecipe = db.prepare(`
     INSERT INTO recipes (
       dish_id, ingredients, seasonings, steps, cover_image_path, video_url, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, '', ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const dish of commonDishes) {
@@ -120,10 +131,34 @@ function backfillCommonDishes(db: DatabaseSync): void {
       dish.recipe.ingredients,
       dish.recipe.seasonings,
       dish.recipe.steps,
+      dish.recipe.coverImagePath,
       buildRecipeVideoUrl(dish.name),
       now,
       now
     );
+  }
+}
+
+function backfillDefaultCoverImages(db: DatabaseSync): void {
+  const now = new Date().toISOString();
+  const findRecipe = db.prepare(`
+    SELECT r.id, r.cover_image_path
+    FROM recipes r
+    INNER JOIN dishes d ON d.id = r.dish_id
+    WHERE d.name = ?
+  `);
+  const updateCover = db.prepare("UPDATE recipes SET cover_image_path = ?, updated_at = ? WHERE id = ?");
+  const categoryDefaultImages = new Set(Object.values(defaultCoverImagesByCategory));
+
+  for (const dish of commonDishes) {
+    const recipe = findRecipe.get(dish.name) as { id: number; cover_image_path: string } | undefined;
+    if (!recipe) {
+      continue;
+    }
+    if (recipe.cover_image_path.trim() && !categoryDefaultImages.has(recipe.cover_image_path)) {
+      continue;
+    }
+    updateCover.run(dish.recipe.coverImagePath, now, recipe.id);
   }
 }
 

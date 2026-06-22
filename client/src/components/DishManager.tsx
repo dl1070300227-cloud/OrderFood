@@ -1,7 +1,8 @@
-import { ArrowDown, ArrowUp, ImageUp, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ExternalLink, ImageUp, Pencil, PlayCircle, Plus, Save, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { createDish, deleteDish, getAssetUrl, updateDish, uploadRecipeImage } from "../api";
 import type { Dish, DishInput } from "../types";
+import { getVideoEmbed } from "../videoEmbed";
 
 type DishManagerProps = {
   dishes: Dish[];
@@ -25,6 +26,7 @@ function createEmptyForm(): DishInput {
     estimatedMinutes: null,
     difficulty: "",
     isRecommended: false,
+    isFavorite: false,
     recipe: {
       ingredients: "",
       seasonings: "",
@@ -40,6 +42,7 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<DishInput>(() => createEmptyForm());
   const [message, setMessage] = useState("");
+  const videoEmbed = getVideoEmbed(form.recipe.videoUrl);
 
   function editDish(dish: Dish) {
     setEditingId(dish.id);
@@ -51,6 +54,7 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
       estimatedMinutes: dish.estimatedMinutes,
       difficulty: dish.difficulty,
       isRecommended: dish.isRecommended,
+      isFavorite: dish.isFavorite,
       recipe: {
         ...dish.recipe,
         stepItems: dish.recipe.stepItems.length > 0 ? dish.recipe.stepItems : [createEmptyStep()]
@@ -284,6 +288,38 @@ export function DishManager({ dishes, onChanged }: DishManagerProps) {
               />
             </label>
           </div>
+
+          {videoEmbed ? (
+            <div className="video-preview" aria-label="视频预览">
+              <div className="section-heading">
+                <h4>视频预览</h4>
+                <span>{videoEmbed.kind === "link" ? "无法内嵌时可打开原链接" : "可直接播放"}</span>
+              </div>
+              {videoEmbed.kind === "iframe" ? (
+                <iframe
+                  allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                  allowFullScreen
+                  className="embedded-video-player"
+                  loading="lazy"
+                  src={videoEmbed.src}
+                  title={videoEmbed.title}
+                />
+              ) : videoEmbed.kind === "video" ? (
+                <video className="embedded-video-player" controls preload="metadata" src={videoEmbed.src}>
+                  当前浏览器不支持直接播放该视频。
+                </video>
+              ) : (
+                <div className="video-unsupported">
+                  <PlayCircle size={22} aria-hidden="true" />
+                  <p>这个链接暂不支持内嵌播放</p>
+                </div>
+              )}
+              <a className="video-link" href={videoEmbed.originalUrl} rel="noreferrer" target="_blank">
+                <ExternalLink size={15} aria-hidden="true" />
+                打开原视频
+              </a>
+            </div>
+          ) : null}
 
           {form.recipe.coverImagePath ? (
             <div className="upload-preview">

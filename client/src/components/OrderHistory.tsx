@@ -1,9 +1,19 @@
-import { CheckCircle2, CircleDot } from "lucide-react";
-import { updateOrderStatus } from "../api";
-import type { Order } from "../types";
+import { CheckCircle2, CircleDot, Search, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { deleteOrder, updateOrderStatus } from "../api";
+import type { Order, OrderStats, OrderStatsRange } from "../types";
 
 type OrderHistoryProps = {
+  customRange: OrderStatsRange;
   orders: Order[];
+  stats: {
+    today: OrderStats | null;
+    month: OrderStats | null;
+    year: OrderStats | null;
+    custom: OrderStats | null;
+  };
+  onCustomRangeChanged: (range: OrderStatsRange) => Promise<void>;
+  onOrderDeleted: () => void;
   onStatusChanged: () => void;
 };
 
@@ -20,10 +30,49 @@ function formatTime(value: string): string {
   }).format(new Date(value));
 }
 
-export function OrderHistory({ orders, onStatusChanged }: OrderHistoryProps) {
+function StatCard({ label, stats }: { label: string; stats: OrderStats | null }) {
+  return (
+    <div className="stat-card">
+      <span>{label}</span>
+      <strong>{money(stats?.total ?? 0)}</strong>
+      <small>{stats?.orderCount ?? 0} 笔订单</small>
+    </div>
+  );
+}
+
+export function OrderHistory({
+  customRange,
+  orders,
+  stats,
+  onCustomRangeChanged,
+  onOrderDeleted,
+  onStatusChanged
+}: OrderHistoryProps) {
+  const [range, setRange] = useState(customRange);
+  const [rangeMessage, setRangeMessage] = useState("");
+
   async function toggleStatus(order: Order) {
     await updateOrderStatus(order.id, order.status === "pending" ? "completed" : "pending");
     onStatusChanged();
+  }
+
+  async function handleDelete(order: Order) {
+    if (!window.confirm(`确定删除这笔 ${money(order.totalPrice)} 的订单吗？`)) {
+      return;
+    }
+
+    await deleteOrder(order.id);
+    onOrderDeleted();
+  }
+
+  async function submitCustomRange() {
+    if (range.startDate > range.endDate) {
+      setRangeMessage("开始日期不能晚于结束日期");
+      return;
+    }
+
+    setRangeMessage("");
+    await onCustomRangeChanged(range);
   }
 
   return (
@@ -35,6 +84,37 @@ export function OrderHistory({ orders, onStatusChanged }: OrderHistoryProps) {
         </div>
         <span className="dish-count">{orders.length} 笔</span>
       </div>
+
+      <div className="stats-grid" aria-label="消费统计">
+        <StatCard label="今日消费" stats={stats.today} />
+        <StatCard label="本月消费" stats={stats.month} />
+        <StatCard label="年度消费" stats={stats.year} />
+        <StatCard label="自定义消费" stats={stats.custom} />
+      </div>
+
+      <div className="custom-stats-bar">
+        <label className="field">
+          <span>开始日期</span>
+          <input
+            type="date"
+            value={range.startDate}
+            onChange={(event) => setRange((current) => ({ ...current, startDate: event.target.value }))}
+          />
+        </label>
+        <label className="field">
+          <span>结束日期</span>
+          <input
+            type="date"
+            value={range.endDate}
+            onChange={(event) => setRange((current) => ({ ...current, endDate: event.target.value }))}
+          />
+        </label>
+        <button className="ghost-button" type="button" onClick={() => void submitCustomRange()}>
+          <Search size={17} aria-hidden="true" />
+          查询消费
+        </button>
+      </div>
+      {rangeMessage ? <p className="form-message">{rangeMessage}</p> : null}
 
       <div className="order-list">
         {orders.length === 0 ? (
@@ -63,14 +143,20 @@ export function OrderHistory({ orders, onStatusChanged }: OrderHistoryProps) {
 
               <div className="order-footer">
                 <strong>合计 {money(order.totalPrice)}</strong>
-                <button className="ghost-button" type="button" onClick={() => toggleStatus(order)}>
-                  {order.status === "completed" ? (
-                    <CircleDot size={17} aria-hidden="true" />
-                  ) : (
-                    <CheckCircle2 size={17} aria-hidden="true" />
-                  )}
-                  {order.status === "completed" ? "标记待完成" : "标记完成"}
-                </button>
+                <div className="order-actions">
+                  <button className="ghost-button" type="button" onClick={() => void toggleStatus(order)}>
+                    {order.status === "completed" ? (
+                      <CircleDot size={17} aria-hidden="true" />
+                    ) : (
+                      <CheckCircle2 size={17} aria-hidden="true" />
+                    )}
+                    {order.status === "completed" ? "标记待完成" : "标记完成"}
+                  </button>
+                  <button className="danger-button" type="button" onClick={() => void handleDelete(order)}>
+                    <Trash2 size={17} aria-hidden="true" />
+                    删除订单
+                  </button>
+                </div>
               </div>
             </article>
           ))

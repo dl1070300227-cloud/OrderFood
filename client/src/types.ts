@@ -23,10 +23,13 @@ export type Dish = {
   estimatedMinutes: number | null;
   difficulty: string;
   isRecommended: boolean;
+  isFavorite: boolean;
   recipe: Recipe;
 };
 
 export type DishInput = Omit<Dish, "id">;
+
+export type DishQuickFilter = "all" | "category" | "recommended" | "favorite";
 
 export type OrderItem = {
   id: number;
@@ -46,6 +49,18 @@ export type Order = {
   totalPrice: number;
   status: "pending" | "completed";
   items: OrderItem[];
+};
+
+export type OrderStats = {
+  total: number;
+  orderCount: number;
+  startDate: string;
+  endDate: string;
+};
+
+export type OrderStatsRange = {
+  startDate: string;
+  endDate: string;
 };
 
 export type CartItem = {

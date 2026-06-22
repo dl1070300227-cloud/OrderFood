@@ -26,6 +26,13 @@ type OrderItemRow = {
   subtotal: number;
 };
 
+export type OrderStats = {
+  total: number;
+  orderCount: number;
+  startDate: string;
+  endDate: string;
+};
+
 export type Order = {
   id: number;
   orderedAt: string;
@@ -61,10 +68,66 @@ export const updateOrderStatusSchema = z.object({
   status: z.enum(["pending", "completed"])
 });
 
+const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const orderStatsQuerySchema = z
+  .object({
+    startDate: dateOnlySchema,
+    endDate: dateOnlySchema
+  })
+  .superRefine((value, context) => {
+    const start = parseDateOnly(value.startDate);
+    const end = parseDateOnly(value.endDate);
+
+    if (!start) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["startDate"], message: "开始日期无效" });
+    }
+    if (!end) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "结束日期无效" });
+    }
+    if (start && end && start.getTime() > end.getTime()) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "结束日期不能早于开始日期" });
+    }
+  });
+
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+export type OrderStatsQuery = z.infer<typeof orderStatsQuerySchema>;
 
 function roundMoney(value: number): number {
   return Number(value.toFixed(2));
+}
+
+function parseDateOnly(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day);
+
+  if (date.getFullYear() !== year || date.getMonth() !== monthIndex || date.getDate() !== day) {
+    return null;
+  }
+
+  return date;
+}
+
+function toDayBoundaryIso(value: string, boundary: "start" | "end"): string {
+  const date = parseDateOnly(value);
+  if (!date) {
+    throw new Error("日期无效");
+  }
+
+  if (boundary === "start") {
+    date.setHours(0, 0, 0, 0);
+  } else {
+    date.setHours(23, 59, 59, 999);
+  }
+
+  return date.toISOString();
 }
 
 function mapOrder(row: OrderRow, items: OrderItemRow[]): Order {
@@ -181,4 +244,38 @@ export function updateOrderStatus(
     return null;
   }
   return getOrder(db, id);
+}
+
+export function deleteOrder(db: DatabaseSync, id: number): boolean {
+  db.exec("BEGIN");
+  try {
+    db.prepare("DELETE FROM order_items WHERE order_id = ?").run(id);
+    const result = db.prepare("DELETE FROM orders WHERE id = ?").run(id);
+    db.exec("COMMIT");
+    return result.changes > 0;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function getOrderStats(db: DatabaseSync, query: OrderStatsQuery): OrderStats {
+  const startIso = toDayBoundaryIso(query.startDate, "start");
+  const endIso = toDayBoundaryIso(query.endDate, "end");
+  const row = db
+    .prepare(
+      `
+      SELECT COALESCE(SUM(total_price), 0) AS total, COUNT(*) AS order_count
+      FROM orders
+      WHERE ordered_at >= ? AND ordered_at <= ?
+    `
+    )
+    .get(startIso, endIso) as { total: number; order_count: number };
+
+  return {
+    total: roundMoney(row.total),
+    orderCount: row.order_count,
+    startDate: query.startDate,
+    endDate: query.endDate
+  };
 }

@@ -5,7 +5,9 @@ import {
   deleteDish,
   dishInputSchema,
   listDishes,
-  updateDish
+  updateDish,
+  updateDishFavorite,
+  updateDishFavoriteSchema
 } from "../modules/dishes";
 
 export function createDishesRouter(db: DatabaseSync): Router {
@@ -28,6 +30,20 @@ export function createDishesRouter(db: DatabaseSync): Router {
     try {
       const input = dishInputSchema.parse(request.body);
       const dish = updateDish(db, Number(request.params.id), input);
+      if (!dish) {
+        response.status(404).json({ message: "菜品不存在" });
+        return;
+      }
+      response.json(dish);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/:id/favorite", (request, response, next) => {
+    try {
+      const input = updateDishFavoriteSchema.parse(request.body);
+      const dish = updateDishFavorite(db, Number(request.params.id), input.isFavorite);
       if (!dish) {
         response.status(404).json({ message: "菜品不存在" });
         return;

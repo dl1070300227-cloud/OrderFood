@@ -1,6 +1,14 @@
-import type { CreateOrderInput, Dish, DishInput, Order } from "./types";
+import type { CreateOrderInput, Dish, DishInput, Order, OrderStats, OrderStatsRange } from "./types";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3001";
+export function buildApiBase(configuredBase?: string, pageHostname = window.location.hostname): string {
+  if (configuredBase) {
+    return configuredBase.replace(/\/$/, "");
+  }
+
+  return `http://${pageHostname || "localhost"}:3001`;
+}
+
+const API_BASE = buildApiBase(import.meta.env.VITE_API_BASE);
 
 export function getAssetUrl(path: string): string {
   if (!path) {
@@ -57,6 +65,13 @@ export function deleteDish(id: number): Promise<void> {
   });
 }
 
+export function updateDishFavorite(id: number, isFavorite: boolean): Promise<Dish> {
+  return request<Dish>(`/api/dishes/${id}/favorite`, {
+    method: "PATCH",
+    body: JSON.stringify({ isFavorite })
+  });
+}
+
 export async function uploadRecipeImage(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("image", file);
@@ -79,6 +94,11 @@ export function fetchOrders(): Promise<Order[]> {
   return request<Order[]>("/api/orders");
 }
 
+export function fetchOrderStats(range: OrderStatsRange): Promise<OrderStats> {
+  const params = new URLSearchParams(range);
+  return request<OrderStats>(`/api/orders/stats?${params.toString()}`);
+}
+
 export function createOrder(input: CreateOrderInput): Promise<Order> {
   return request<Order>("/api/orders", {
     method: "POST",
@@ -90,5 +110,11 @@ export function updateOrderStatus(id: number, status: "pending" | "completed"): 
   return request<Order>(`/api/orders/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status })
+  });
+}
+
+export function deleteOrder(id: number): Promise<void> {
+  return request<void>(`/api/orders/${id}`, {
+    method: "DELETE"
   });
 }

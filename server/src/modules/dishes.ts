@@ -26,6 +26,7 @@ export type Dish = {
   estimatedMinutes: number | null;
   difficulty: string;
   isRecommended: boolean;
+  isFavorite: boolean;
   recipe: Recipe;
 };
 
@@ -38,6 +39,7 @@ type DishRow = {
   estimated_minutes: number | null;
   difficulty: string;
   is_recommended: number;
+  is_favorite: number;
   ingredients: string | null;
   seasonings: string | null;
   steps: string | null;
@@ -68,6 +70,7 @@ export const dishInputSchema = z.object({
   estimatedMinutes: z.number().int().min(0).nullable().optional(),
   difficulty: z.string().trim().default(""),
   isRecommended: z.boolean().default(false),
+  isFavorite: z.boolean().default(false),
   recipe: z.object({
     ingredients: z.string().default(""),
     seasonings: z.string().default(""),
@@ -120,6 +123,7 @@ function mapDish(db: DatabaseSync, row: DishRow): Dish {
     estimatedMinutes: row.estimated_minutes,
     difficulty: row.difficulty,
     isRecommended: row.is_recommended === 1,
+    isFavorite: row.is_favorite === 1,
     recipe: {
       ingredients: row.ingredients ?? "",
       seasonings: row.seasonings ?? "",
@@ -137,7 +141,7 @@ export function listDishes(db: DatabaseSync): Dish[] {
       `
       SELECT
         d.id, d.name, d.category, d.price, d.description, d.estimated_minutes,
-        d.difficulty, d.is_recommended, r.ingredients, r.seasonings, r.steps,
+        d.difficulty, d.is_recommended, d.is_favorite, r.ingredients, r.seasonings, r.steps,
         r.cover_image_path, r.video_url
       FROM dishes d
       LEFT JOIN recipes r ON r.dish_id = d.id
@@ -154,7 +158,7 @@ export function getDish(db: DatabaseSync, id: number): Dish | null {
       `
       SELECT
         d.id, d.name, d.category, d.price, d.description, d.estimated_minutes,
-        d.difficulty, d.is_recommended, r.ingredients, r.seasonings, r.steps,
+        d.difficulty, d.is_recommended, d.is_favorite, r.ingredients, r.seasonings, r.steps,
         r.cover_image_path, r.video_url
       FROM dishes d
       LEFT JOIN recipes r ON r.dish_id = d.id
@@ -208,9 +212,9 @@ export function createDish(db: DatabaseSync, input: DishInput): Dish {
       `
       INSERT INTO dishes (
         name, category, price, description, estimated_minutes, difficulty,
-        is_recommended, created_at, updated_at
+        is_recommended, is_favorite, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     )
     .run(
@@ -221,6 +225,7 @@ export function createDish(db: DatabaseSync, input: DishInput): Dish {
       input.estimatedMinutes ?? null,
       input.difficulty,
       input.isRecommended ? 1 : 0,
+      input.isFavorite ? 1 : 0,
       now,
       now
     );
@@ -259,7 +264,7 @@ export function updateDish(db: DatabaseSync, id: number, input: DishInput): Dish
       `
       UPDATE dishes
       SET name = ?, category = ?, price = ?, description = ?, estimated_minutes = ?,
-          difficulty = ?, is_recommended = ?, updated_at = ?
+          difficulty = ?, is_recommended = ?, is_favorite = ?, updated_at = ?
       WHERE id = ?
     `
     )
@@ -271,6 +276,7 @@ export function updateDish(db: DatabaseSync, id: number, input: DishInput): Dish
       input.estimatedMinutes ?? null,
       input.difficulty,
       input.isRecommended ? 1 : 0,
+      input.isFavorite ? 1 : 0,
       now,
       id
     );
@@ -311,4 +317,21 @@ export function updateDish(db: DatabaseSync, id: number, input: DishInput): Dish
 export function deleteDish(db: DatabaseSync, id: number): boolean {
   const result = db.prepare("DELETE FROM dishes WHERE id = ?").run(id);
   return result.changes > 0;
+}
+
+export const updateDishFavoriteSchema = z.object({
+  isFavorite: z.boolean()
+});
+
+export function updateDishFavorite(db: DatabaseSync, id: number, isFavorite: boolean): Dish | null {
+  const now = new Date().toISOString();
+  const result = db
+    .prepare("UPDATE dishes SET is_favorite = ?, updated_at = ? WHERE id = ?")
+    .run(isFavorite ? 1 : 0, now, id);
+
+  if (result.changes === 0) {
+    return null;
+  }
+
+  return getDish(db, id);
 }

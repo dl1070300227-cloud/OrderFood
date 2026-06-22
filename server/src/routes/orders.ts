@@ -3,7 +3,10 @@ import { Router } from "express";
 import {
   createOrder,
   createOrderSchema,
+  deleteOrder,
+  getOrderStats,
   listOrders,
+  orderStatsQuerySchema,
   updateOrderStatus,
   updateOrderStatusSchema
 } from "../modules/orders";
@@ -13,6 +16,15 @@ export function createOrdersRouter(db: DatabaseSync): Router {
 
   router.get("/", (_request, response) => {
     response.json(listOrders(db));
+  });
+
+  router.get("/stats", (request, response, next) => {
+    try {
+      const input = orderStatsQuerySchema.parse(request.query);
+      response.json(getOrderStats(db, input));
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.post("/", (request, response, next) => {
@@ -36,6 +48,15 @@ export function createOrdersRouter(db: DatabaseSync): Router {
     } catch (error) {
       next(error);
     }
+  });
+
+  router.delete("/:id", (request, response) => {
+    const deleted = deleteOrder(db, Number(request.params.id));
+    if (!deleted) {
+      response.status(404).json({ message: "订单不存在" });
+      return;
+    }
+    response.status(204).send();
   });
 
   return router;

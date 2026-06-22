@@ -10,6 +10,7 @@ export type CommonDish = {
     ingredients: string;
     seasonings: string;
     steps: string;
+    coverImagePath: string;
   };
 };
 
@@ -38,6 +39,48 @@ const recommendedNames = new Set([
   "紫菜蛋花汤",
   "扬州炒饭"
 ]);
+
+export const defaultCoverImagesByCategory: Record<string, string> = {
+  家常菜: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c",
+  荤菜: "https://images.unsplash.com/photo-1504674900247-0877df9cc836",
+  素菜: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd",
+  汤: "https://images.unsplash.com/photo-1547592166-23ac45744acd",
+  主食: "https://images.unsplash.com/photo-1512058564366-18510be2db19",
+  凉菜: "https://images.unsplash.com/photo-1540420773420-3366772f4999",
+  快手菜: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c"
+};
+
+const exactCoverImagesByDish: Record<string, string> = {
+  番茄炒蛋: "https://upload.wikimedia.org/wikipedia/commons/1/19/Stir_Fried_Tomatoes_with_Scrambled_Eggs.jpg",
+  鱼香肉丝: "https://upload.wikimedia.org/wikipedia/commons/6/61/%E9%B1%BC%E9%A6%99%E8%82%89%E4%B8%9D.jpg",
+  宫保鸡丁: "https://upload.wikimedia.org/wikipedia/commons/8/8e/Kung_Pao_Chicken_at_Yujiayan_Restaurant_%2820230510123120%29.jpg",
+  麻婆豆腐: "https://upload.wikimedia.org/wikipedia/commons/a/a5/Billyfoodmabodofu3.jpg",
+  红烧茄子: "https://upload.wikimedia.org/wikipedia/commons/e/e7/%E7%BA%A2%E7%83%A7%E8%8C%84%E5%AD%90-%E4%BA%91%E5%8D%97%E6%98%86%E6%98%8E.jpg",
+  地三鲜: "https://upload.wikimedia.org/wikipedia/commons/5/55/Disanxian.jpg",
+  回锅肉: "https://upload.wikimedia.org/wikipedia/commons/6/61/Twice-cooked_Pork_%E5%9B%9E%E9%94%85%E8%82%89_%281648213963%29.jpg",
+  木须肉: "https://upload.wikimedia.org/wikipedia/commons/3/30/Mu_xu_rou.jpg",
+  京酱肉丝: "https://upload.wikimedia.org/wikipedia/commons/7/71/%E4%BA%AC%E9%85%B1%E8%82%89%E4%B8%9D.jpg",
+  农家小炒肉: "https://upload.wikimedia.org/wikipedia/commons/8/80/Lajiao_Chaorou_at_Xiangzhongyuan_Hunan_Cuisine%2C_Beijing_%2820240131171407%29.jpg",
+  酸菜鱼: "https://upload.wikimedia.org/wikipedia/commons/5/54/%E9%85%B8%E8%8F%9C%E9%B1%BC_Preserved_Mustard_Green_with_Fish_-_Charming_Spice_AUD24.80_%284104355401%29.jpg",
+  鸡汤: "https://upload.wikimedia.org/wikipedia/commons/6/6d/Double-Boiled_Silkie_Bantam_Chicken_and_American_Ginseng_Soup_-_Claypot_King.jpg",
+  扬州炒饭: "https://upload.wikimedia.org/wikipedia/commons/3/3c/Yangzhou_fried_rice_and_drinks_25-09-2019.jpg",
+  蛋炒饭: "https://upload.wikimedia.org/wikipedia/commons/6/65/Chinese_egg_fried_rice.jpg",
+  番茄鸡蛋面: "https://upload.wikimedia.org/wikipedia/commons/6/62/Tomato_and_egg_noodles.jpg",
+  葱油拌面: "https://upload.wikimedia.org/wikipedia/commons/c/c4/%E8%91%B1%E8%8A%B1%E8%91%B1%E6%B2%B9%E6%8B%8C%E9%9D%A2.jpg",
+  炸酱面: "https://upload.wikimedia.org/wikipedia/commons/4/49/Jajangmyeon_by_KFoodaddict.jpg"
+};
+
+function buildDishSearchImageUrl(name: string): string {
+  return `https://tse1.mm.bing.net/th?q=${encodeURIComponent(`${name} 菜品`)}&w=900&h=650&c=7&rs=1&p=0&o=5&pid=1.7`;
+}
+
+export function getDefaultCoverImagePath(category: string): string {
+  return defaultCoverImagesByCategory[category] ?? defaultCoverImagesByCategory["家常菜"];
+}
+
+export function getDishCoverImagePath(name: string): string {
+  return exactCoverImagesByDish[name] ?? buildDishSearchImageUrl(name);
+}
 
 const dishTuples: DishTuple[] = [
   ["番茄炒蛋", "家常菜", 18, 12, "简单", "番茄、鸡蛋", "盐、糖、葱花", "鸡蛋炒熟盛出；番茄炒软出汁；倒回鸡蛋合炒调味。"],
@@ -192,7 +235,8 @@ export const commonDishes: CommonDish[] = dishTuples.map(
     recipe: {
       ingredients,
       seasonings,
-      steps: steps ?? defaultSteps(name, ingredients)
+      steps: steps ?? defaultSteps(name, ingredients),
+      coverImagePath: getDishCoverImagePath(name)
     }
   })
 );
