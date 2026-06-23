@@ -1,6 +1,14 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "order-food",
-  "compatibility_date": "2026-06-22",
-  "pages_build_output_dir": "client/dist"
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "order-food",
+	"compatibility_date": "2026-06-22",
+	"pages_build_output_dir": "client/dist",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "order-food-db",
+			"database_id": "afcaa0ee-17e2-4f0e-bc9c-0326c7fabb5c",
+			"remote": true
+		}
+	]
 }
