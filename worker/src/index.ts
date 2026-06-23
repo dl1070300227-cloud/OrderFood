@@ -123,7 +123,6 @@ const schemaStatements = schemaSql
   .filter(Boolean);
 const seedBatchSize = 8;
 const seedDishChunkSize = 12;
-const dishStepQueryChunkSize = 25;
 
 function json(body: JsonValue, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -362,29 +361,27 @@ async function getRecipeStepsByDishIds(db: D1Database, dishIds: number[]) {
     return new Map<number, Array<{ id: number; stepOrder: number; instruction: string; imagePath: string }>>();
   }
   const stepsByDishId = new Map<number, Array<{ id: number; stepOrder: number; instruction: string; imagePath: string }>>();
-  for (let index = 0; index < dishIds.length; index += dishStepQueryChunkSize) {
-    const chunk = dishIds.slice(index, index + dishStepQueryChunkSize);
-    const placeholders = chunk.map(() => "?").join(", ");
-    const { results } = await db
-      .prepare(
-        `SELECT r.dish_id, rs.id, rs.step_order, rs.instruction, rs.image_path
-         FROM recipe_steps rs
-         INNER JOIN recipes r ON r.id = rs.recipe_id
-         WHERE r.dish_id IN (${placeholders})
-         ORDER BY r.dish_id ASC, rs.step_order ASC, rs.id ASC`
-      )
-      .bind(...chunk)
-      .all<any>();
-    for (const row of results) {
-      const steps = stepsByDishId.get(row.dish_id) ?? [];
-      steps.push({
-        id: row.id,
-        stepOrder: row.step_order,
-        instruction: row.instruction,
-        imagePath: row.image_path
-      });
-      stepsByDishId.set(row.dish_id, steps);
+  const dishIdSet = new Set(dishIds);
+  const { results } = await db
+    .prepare(
+      `SELECT r.dish_id, rs.id, rs.step_order, rs.instruction, rs.image_path
+       FROM recipe_steps rs
+       INNER JOIN recipes r ON r.id = rs.recipe_id
+       ORDER BY r.dish_id ASC, rs.step_order ASC, rs.id ASC`
+    )
+    .all<any>();
+  for (const row of results) {
+    if (!dishIdSet.has(row.dish_id)) {
+      continue;
     }
+    const steps = stepsByDishId.get(row.dish_id) ?? [];
+    steps.push({
+      id: row.id,
+      stepOrder: row.step_order,
+      instruction: row.instruction,
+      imagePath: row.image_path
+    });
+    stepsByDishId.set(row.dish_id, steps);
   }
   return stepsByDishId;
 }
