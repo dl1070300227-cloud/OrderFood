@@ -121,7 +121,9 @@ const schemaStatements = schemaSql
   .split(";")
   .map((statement) => statement.replace(/\s+/g, " ").trim())
   .filter(Boolean);
-const seedBatchSize = 50;
+const seedBatchSize = 8;
+const seedDishChunkSize = 12;
+const dishStepQueryChunkSize = 25;
 
 function json(body: JsonValue, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -240,9 +242,11 @@ async function runBatchInChunks(db: D1Database, statements: D1PreparedStatement[
   }
 }
 
-async function seedCommonDishes(db: D1Database, now: string): Promise<void> {
+async function seedCommonDishes(db: D1Database, now: string, offset: number): Promise<void> {
   const statements: D1PreparedStatement[] = [];
-  for (const dish of commonDishes) {
+  const nextDishes = commonDishes.slice(offset, offset + seedDishChunkSize);
+  const nextOffset = Math.min(offset + nextDishes.length, commonDishes.length);
+  for (const dish of nextDishes) {
     statements.push(
       db
         .prepare(
@@ -307,8 +311,13 @@ async function seedCommonDishes(db: D1Database, now: string): Promise<void> {
     }
   }
   statements.push(
-    db.prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('seeded_common_dishes_v2', 'true')")
+    db
+      .prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('seeded_common_dishes_v2_offset', ?)")
+      .bind(String(nextOffset))
   );
+  if (nextOffset >= commonDishes.length) {
+    statements.push(db.prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('seeded_common_dishes_v2', 'true')"));
+  }
   await runBatchInChunks(db, statements);
 }
 
@@ -322,7 +331,11 @@ async function ensureDatabase(db: D1Database): Promise<void> {
   }
 
   const now = new Date().toISOString();
-  await seedCommonDishes(db, now);
+  const seedOffset = await db
+    .prepare("SELECT value FROM app_metadata WHERE key = 'seeded_common_dishes_v2_offset'")
+    .first<{ value: string }>();
+  const offset = Math.max(0, Math.trunc(Number(seedOffset?.value ?? 0)));
+  await seedCommonDishes(db, now, offset);
 }
 
 async function getRecipeSteps(db: D1Database, dishId: number) {
@@ -348,27 +361,30 @@ async function getRecipeStepsByDishIds(db: D1Database, dishIds: number[]) {
   if (dishIds.length === 0) {
     return new Map<number, Array<{ id: number; stepOrder: number; instruction: string; imagePath: string }>>();
   }
-  const placeholders = dishIds.map(() => "?").join(", ");
-  const { results } = await db
-    .prepare(
-      `SELECT r.dish_id, rs.id, rs.step_order, rs.instruction, rs.image_path
-       FROM recipe_steps rs
-       INNER JOIN recipes r ON r.id = rs.recipe_id
-       WHERE r.dish_id IN (${placeholders})
-       ORDER BY r.dish_id ASC, rs.step_order ASC, rs.id ASC`
-    )
-    .bind(...dishIds)
-    .all<any>();
   const stepsByDishId = new Map<number, Array<{ id: number; stepOrder: number; instruction: string; imagePath: string }>>();
-  for (const row of results) {
-    const steps = stepsByDishId.get(row.dish_id) ?? [];
-    steps.push({
-      id: row.id,
-      stepOrder: row.step_order,
-      instruction: row.instruction,
-      imagePath: row.image_path
-    });
-    stepsByDishId.set(row.dish_id, steps);
+  for (let index = 0; index < dishIds.length; index += dishStepQueryChunkSize) {
+    const chunk = dishIds.slice(index, index + dishStepQueryChunkSize);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const { results } = await db
+      .prepare(
+        `SELECT r.dish_id, rs.id, rs.step_order, rs.instruction, rs.image_path
+         FROM recipe_steps rs
+         INNER JOIN recipes r ON r.id = rs.recipe_id
+         WHERE r.dish_id IN (${placeholders})
+         ORDER BY r.dish_id ASC, rs.step_order ASC, rs.id ASC`
+      )
+      .bind(...chunk)
+      .all<any>();
+    for (const row of results) {
+      const steps = stepsByDishId.get(row.dish_id) ?? [];
+      steps.push({
+        id: row.id,
+        stepOrder: row.step_order,
+        instruction: row.instruction,
+        imagePath: row.image_path
+      });
+      stepsByDishId.set(row.dish_id, steps);
+    }
   }
   return stepsByDishId;
 }

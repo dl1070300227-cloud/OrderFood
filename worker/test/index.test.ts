@@ -96,6 +96,46 @@ function createStrictExecD1(): D1Database {
   } as unknown as D1Database;
 }
 
+function createBatchLimitedD1(limit: number): D1Database {
+  return {
+    async exec() {
+      return { count: 1, duration: 0 };
+    },
+    prepare(sql: string) {
+      return new FakeD1Statement(sql);
+    },
+    async batch(statements: D1PreparedStatement[]) {
+      if (statements.length > limit) {
+        throw new Error(`batch too large: ${statements.length}`);
+      }
+      return statements.map(() => ({ meta: { last_row_id: 1 } }));
+    }
+  } as unknown as D1Database;
+}
+
+class FakeUnseededD1Statement extends FakeD1Statement {
+  async first() {
+    return null;
+  }
+}
+
+function createUnseededBatchLimitedD1(limit: number): D1Database {
+  return {
+    async exec() {
+      return { count: 1, duration: 0 };
+    },
+    prepare(sql: string) {
+      return new FakeUnseededD1Statement(sql);
+    },
+    async batch(statements: D1PreparedStatement[]) {
+      if (statements.length > limit) {
+        throw new Error(`batch too large: ${statements.length}`);
+      }
+      return statements.map(() => ({ meta: { last_row_id: 1 } }));
+    }
+  } as unknown as D1Database;
+}
+
 describe("handleApi", () => {
   it("initializes D1 with single statements before listing dishes", async () => {
     const db = createStrictExecD1() as D1Database & { prepareCount: number };
@@ -106,5 +146,14 @@ describe("handleApi", () => {
     expect(body).toHaveLength(2);
     expect(body[0].recipe.stepItems).toEqual([{ id: 1, stepOrder: 1, instruction: "炒鸡蛋", imagePath: "" }]);
     expect(db.prepareCount).toBeLessThanOrEqual(3);
+  });
+
+  it("seeds common dishes in smaller batches", async () => {
+    const response = await handleApi(
+      { DB: createUnseededBatchLimitedD1(20) },
+      new Request("https://example.com/api/dishes", { method: "GET" })
+    );
+
+    expect(response.status).toBe(200);
   });
 });
