@@ -121,6 +121,7 @@ const schemaStatements = schemaSql
   .split(";")
   .map((statement) => statement.replace(/\s+/g, " ").trim())
   .filter(Boolean);
+const seedBatchSize = 50;
 
 function json(body: JsonValue, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -233,6 +234,84 @@ function normalizeRecipeSteps(input: ParsedDishInput): ParsedRecipeStep[] {
   return splitRecipeSteps(input.recipe.steps).map((instruction, index) => ({ stepOrder: index + 1, instruction, imagePath: "" }));
 }
 
+async function runBatchInChunks(db: D1Database, statements: D1PreparedStatement[]): Promise<void> {
+  for (let index = 0; index < statements.length; index += seedBatchSize) {
+    await db.batch(statements.slice(index, index + seedBatchSize));
+  }
+}
+
+async function seedCommonDishes(db: D1Database, now: string): Promise<void> {
+  const statements: D1PreparedStatement[] = [];
+  for (const dish of commonDishes) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO dishes (
+            name, category, price, description, estimated_minutes, difficulty,
+            is_recommended, is_favorite, created_at, updated_at
+          )
+          SELECT ?, ?, ?, ?, ?, ?, ?, 0, ?, ?
+          WHERE NOT EXISTS (SELECT 1 FROM dishes WHERE name = ?)`
+        )
+        .bind(
+          dish.name,
+          dish.category,
+          dish.price,
+          dish.description,
+          dish.estimatedMinutes,
+          dish.difficulty,
+          dish.isRecommended ? 1 : 0,
+          now,
+          now,
+          dish.name
+        )
+    );
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO recipes (
+            dish_id, ingredients, seasonings, steps, cover_image_path, video_url, created_at, updated_at
+          )
+          SELECT d.id, ?, ?, ?, ?, ?, ?, ?
+          FROM dishes d
+          WHERE d.name = ?
+            AND NOT EXISTS (SELECT 1 FROM recipes WHERE dish_id = d.id)`
+        )
+        .bind(
+          dish.recipe.ingredients,
+          dish.recipe.seasonings,
+          dish.recipe.steps,
+          dish.recipe.coverImagePath,
+          buildRecipeVideoUrl(dish.name),
+          now,
+          now,
+          dish.name
+        )
+    );
+    for (const [index, instruction] of splitRecipeSteps(dish.recipe.steps).entries()) {
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO recipe_steps (recipe_id, step_order, instruction, image_path, created_at, updated_at)
+             SELECT r.id, ?, ?, '', ?, ?
+             FROM recipes r
+             INNER JOIN dishes d ON d.id = r.dish_id
+             WHERE d.name = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM recipe_steps existing
+                 WHERE existing.recipe_id = r.id AND existing.step_order = ?
+               )`
+          )
+          .bind(index + 1, instruction, now, now, dish.name, index + 1)
+      );
+    }
+  }
+  statements.push(
+    db.prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('seeded_common_dishes_v2', 'true')")
+  );
+  await runBatchInChunks(db, statements);
+}
+
 async function ensureDatabase(db: D1Database): Promise<void> {
   for (const statement of schemaStatements) {
     await db.exec(statement);
@@ -243,61 +322,7 @@ async function ensureDatabase(db: D1Database): Promise<void> {
   }
 
   const now = new Date().toISOString();
-  for (const dish of commonDishes) {
-    const existing = await db.prepare("SELECT id FROM dishes WHERE name = ?").bind(dish.name).first<{ id: number }>();
-    if (existing) {
-      continue;
-    }
-    const result = await db
-      .prepare(
-        `INSERT INTO dishes (
-          name, category, price, description, estimated_minutes, difficulty,
-          is_recommended, is_favorite, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-      )
-      .bind(
-        dish.name,
-        dish.category,
-        dish.price,
-        dish.description,
-        dish.estimatedMinutes,
-        dish.difficulty,
-        dish.isRecommended ? 1 : 0,
-        now,
-        now
-      )
-      .run();
-    const dishId = result.meta.last_row_id;
-    const recipeResult = await db
-      .prepare(
-        `INSERT INTO recipes (
-          dish_id, ingredients, seasonings, steps, cover_image_path, video_url, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        dishId,
-        dish.recipe.ingredients,
-        dish.recipe.seasonings,
-        dish.recipe.steps,
-        dish.recipe.coverImagePath,
-        buildRecipeVideoUrl(dish.name),
-        now,
-        now
-      )
-      .run();
-    for (const [index, instruction] of splitRecipeSteps(dish.recipe.steps).entries()) {
-      await db
-        .prepare(
-          `INSERT INTO recipe_steps (recipe_id, step_order, instruction, image_path, created_at, updated_at)
-           VALUES (?, ?, ?, '', ?, ?)`
-        )
-        .bind(recipeResult.meta.last_row_id, index + 1, instruction, now, now)
-        .run();
-    }
-  }
-  await db
-    .prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('seeded_common_dishes_v2', 'true')")
-    .run();
+  await seedCommonDishes(db, now);
 }
 
 async function getRecipeSteps(db: D1Database, dishId: number) {
@@ -319,7 +344,36 @@ async function getRecipeSteps(db: D1Database, dishId: number) {
   }));
 }
 
-async function mapDish(db: D1Database, row: any) {
+async function getRecipeStepsByDishIds(db: D1Database, dishIds: number[]) {
+  if (dishIds.length === 0) {
+    return new Map<number, Array<{ id: number; stepOrder: number; instruction: string; imagePath: string }>>();
+  }
+  const placeholders = dishIds.map(() => "?").join(", ");
+  const { results } = await db
+    .prepare(
+      `SELECT r.dish_id, rs.id, rs.step_order, rs.instruction, rs.image_path
+       FROM recipe_steps rs
+       INNER JOIN recipes r ON r.id = rs.recipe_id
+       WHERE r.dish_id IN (${placeholders})
+       ORDER BY r.dish_id ASC, rs.step_order ASC, rs.id ASC`
+    )
+    .bind(...dishIds)
+    .all<any>();
+  const stepsByDishId = new Map<number, Array<{ id: number; stepOrder: number; instruction: string; imagePath: string }>>();
+  for (const row of results) {
+    const steps = stepsByDishId.get(row.dish_id) ?? [];
+    steps.push({
+      id: row.id,
+      stepOrder: row.step_order,
+      instruction: row.instruction,
+      imagePath: row.image_path
+    });
+    stepsByDishId.set(row.dish_id, steps);
+  }
+  return stepsByDishId;
+}
+
+function mapDish(row: any, stepItems: Array<{ id: number; stepOrder: number; instruction: string; imagePath: string }> = []) {
   return {
     id: row.id,
     name: row.name,
@@ -336,7 +390,7 @@ async function mapDish(db: D1Database, row: any) {
       steps: row.steps ?? "",
       coverImagePath: row.cover_image_path ?? "",
       videoUrl: row.video_url ?? "",
-      stepItems: await getRecipeSteps(db, row.id)
+      stepItems
     }
   };
 }
@@ -352,7 +406,11 @@ async function listDishes(db: D1Database): Promise<Response> {
        ORDER BY d.is_recommended DESC, d.name ASC`
     )
     .all<any>();
-  return json(await Promise.all(results.map((row) => mapDish(db, row))));
+  const stepsByDishId = await getRecipeStepsByDishIds(
+    db,
+    results.map((row) => row.id)
+  );
+  return json(results.map((row) => mapDish(row, stepsByDishId.get(row.id) ?? [])));
 }
 
 async function getDish(db: D1Database, id: number) {
@@ -367,7 +425,7 @@ async function getDish(db: D1Database, id: number) {
     )
     .bind(id)
     .first<any>();
-  return row ? mapDish(db, row) : null;
+  return row ? mapDish(row, await getRecipeSteps(db, row.id)) : null;
 }
 
 async function replaceRecipeSteps(db: D1Database, dishId: number, input: ReturnType<typeof parseDishInput>, now: string) {
