@@ -117,6 +117,11 @@ CREATE TABLE IF NOT EXISTS order_items (
 );
 `;
 
+const schemaStatements = schemaSql
+  .split(";")
+  .map((statement) => statement.replace(/\s+/g, " ").trim())
+  .filter(Boolean);
+
 function json(body: JsonValue, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
     ...init,
@@ -229,7 +234,9 @@ function normalizeRecipeSteps(input: ParsedDishInput): ParsedRecipeStep[] {
 }
 
 async function ensureDatabase(db: D1Database): Promise<void> {
-  await db.exec(schemaSql);
+  for (const statement of schemaStatements) {
+    await db.exec(statement);
+  }
   const seeded = await db.prepare("SELECT value FROM app_metadata WHERE key = 'seeded_common_dishes_v2'").first<{ value: string }>();
   if (seeded?.value === "true") {
     return;
@@ -695,7 +702,7 @@ export async function serveUpload(env: ApiEnv, pathname: string): Promise<Respon
   return new Response(object.body, { headers });
 }
 
-export async function handleApi(env: ApiEnv, request: Request): Promise<Response> {
+async function handleApiRequest(env: ApiEnv, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
@@ -757,6 +764,15 @@ export async function handleApi(env: ApiEnv, request: Request): Promise<Response
     return deleteOrder(db, Number(orderMatch[1]));
   }
   return notFound("接口不存在");
+}
+
+export async function handleApi(env: ApiEnv, request: Request): Promise<Response> {
+  try {
+    return await handleApiRequest(env, request);
+  } catch (error) {
+    const status = typeof error === "object" && error && "statusCode" in error ? Number((error as any).statusCode) : 500;
+    return json({ message: error instanceof Error ? error.message : "Internal server error" }, { status });
+  }
 }
 
 export default {
